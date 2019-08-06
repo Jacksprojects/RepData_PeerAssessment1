@@ -1,0 +1,258 @@
+---
+title: "Peer Project Week 2"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Introduction
+It is now possible to collect a large amount of data about personal movement using activity monitoring devices such as a Fitbit, Nike Fuelband, or Jawbone Up. These type of devices are part of the “quantified self” movement – a group of enthusiasts who take measurements about themselves regularly to improve their health, to find patterns in their behavior, or because they are tech geeks. But these data remain under-utilized both because the raw data are hard to obtain and there is a lack of statistical methods and software for processing and interpreting the data.
+
+This assignment makes use of data from a personal activity monitoring device. This device collects data at 5 minute intervals through out the day. The data consists of two months of data from an anonymous individual collected during the months of October and November, 2012 and include the number of steps taken in 5 minute intervals each day.
+
+The variables included in this dataset are:
+
+* **steps:** Number of steps taking in a 5-minute interval. (*missing values are coded as NA*)
+
+* **date:** The date on which the measurement was taken in **YYYY-MM-DD** format.
+
+* **interval:** Identifier for the 5-minute interval in which measurement was taken.
+
+The dataset is stored in a comma-separated-value (CSV) file and there are a total of **17,568** observations in this dataset.
+
+# Part 1: Load in the required packages and the data
+
+For this project, we will be using the packages: 'dplyr', 'ggplot2', 'lubridate', 'mice' and 'gridExtra'.
+
+The majority of the data manipulation will be done by 'dplyr', the visualisation by 'ggplot2', the data imputation with the 'mice' package and the arranging of a plots using 'gridExtra'.
+
+
+```{r, results='hide'}
+library(dplyr, warn.conflicts=F, quietly=T)
+library(ggplot2, warn.conflicts=F, quietly=T)
+library(lubridate, warn.conflicts=F, quietly=T)
+library(mice, warn.conflicts=F, quietly=T)
+library(gridExtra, warn.conflicts=F, quietly=T)
+
+activity <- read.csv("~/activity.csv")
+activity$date <- ymd(activity$date)
+```
+
+## 1. What is the distribution of the total number of steps per day?
+
+We will be ignoring the missing values in our dataset for this step in our analysis.
+
+<p>
+```{r, cache=TRUE}
+daily_activity <- activity %>%
+  group_by(date) %>%
+  mutate(daily_steps = sum(na.omit(steps))) %>%
+  summarize(mean(daily_steps))
+
+d <- ggplot(data = daily_activity, aes(daily_activity$`mean(daily_steps)`)) +
+  geom_histogram() +
+  ggtitle("Histogram of Total Number of Steps per Day") +
+  labs(x = "Total Number of Steps", y = "Count")
+
+d
+```
+</p>
+
+### 1. b) What are the Mean and Median number of steps taken per day?
+<p>
+```{r}
+daily_activity2 <- daily_activity %>%
+  summarise(mean_steps_per_day = mean(na.omit(daily_activity$`mean(daily_steps)`)),
+            median_steps_per_day = median(na.omit(daily_activity$`mean(daily_steps)`)))
+
+head(daily_activity2)
+```
+</p>
+
+## 2. What is the average daily pattern?
+
+In this step of our analysis we will again be omiting all missing values.
+
+<p>
+```{r, cache=TRUE}
+per_interval <- activity %>%
+  group_by(interval) %>%
+  mutate(max_mean = mean(na.omit(steps)))
+
+
+ggplot(data = per_interval, aes(x = per_interval$interval, y = per_interval$max_mean)) +
+  geom_point() +
+  geom_smooth() +
+  labs(x = "5 minute interval throughout the day", y = "Average step count per interval for all days") + 
+  ggtitle("Scatter plot of average step count per 5 minute interval for all days")
+```
+</p>
+
+### 2. b) Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+<p>
+``` {r}
+max_int<- per_interval %>%
+  arrange(desc(max_mean)) %>%
+  select(interval, max_mean)
+
+max_int[1 , ]
+  
+```
+</p>
+
+This shows us that the 5-minute interval that has the highest average accross all the days in our data set is the **835** 5-minute interval. The following plot allows us to examine the distribution of median scores averaged over  all intervals, revealing two main peaks over the low 800 range and the 1800 range. 
+```{r}
+intervals <- activity %>%
+  group_by(interval) %>%
+  summarise(median = median(na.omit(steps)))
+plot(intervals, xlim =c(500, 2000), ylab= "Median Step Count", xlab = "5 Minute interval", main = "Median Step Count Averaged Over All Intervals")
+```
+<p>
+
+
+## 3. Imputing Missing Values: Calculating the number of NA values corresponding to Step measurments in the acitvity data set
+```{r}
+sum(is.na(activity$steps))
+```
+
+We're going to impute the data using a method known as **predictive mean matching** using the **MICE** package.
+
+The following plot will give us an idea of where the missing data exist in out data set, just in case there are any other missing values besides those relating to step count. 
+<p>
+```{r, cache=TRUE}
+md.pattern(activity)
+
+```
+</p>
+
+Here we specify the use of predictive mean matching as our method of imputation, this will create 5 new data sets created over 50 iterations.
+<p>
+```{r, results='hide', cache=TRUE}
+imputed_data <- mice(activity, m=5, maxit = 50, method = 'pmm', seed = 123)
+```
+</p>
+
+<p>
+```{r}
+summary(imputed_data)
+
+# We'll choose to use the second of the five created data sets 
+complete_data <- complete(imputed_data,2)
+
+head(complete_data)
+
+data_full <- complete_data %>%
+  group_by(date) %>%
+  mutate(sum_steps = sum(steps)) 
+```
+</p>
+
+## 3. b) Mean, median and IQR of the imputed data set:
+<p>
+```{r}
+summary(data_full$sum_steps)
+```
+
+### Mean and median of the original data set:
+</p>
+```{r}
+head(daily_activity2)
+```
+
+This shows us that the effect of imputing the data:
+
+* **Raises the mean** number of daily steps  from 9354 to 10813. (*+15.6%*)
+* **Raises the median** number of daily steps from 10395 to 11054. (*+6.3%*)
+
+### Comparison between histogram of both imputed dataset (*on the left*) and original data set with missing values (*on the right*):
+<p>
+```{r}
+e <- ggplot(data = data_full, aes(data_full$sum_steps)) +
+  geom_histogram() +
+  ggtitle("Histogram of mean steps per day with imputed values") +
+  labs(x = "Mean Steps Per Day", y = "Count") 
+
+grid.arrange(e,d,nrow=1)
+```
+</p>
+
+## 4. Differences in activity between weekdays and weekends
+<p>
+```{r, cache=TRUE}
+complete2 <- complete_data
+
+# create list of week days
+complete2$weekdays <- weekdays(complete2$date)
+
+# create logical for weekend
+complete2 <- complete2 %>%
+  mutate(weekend = (complete2$weekdays == c("Saturday", "Sunday")))
+
+# name the logical variable and change to factor
+complete2$weekend <- factor(complete2$weekend, levels = c("TRUE", "FALSE"), labels = c("Weekend", "Weekday"))
+
+# Subset the data into two sets, weekdays and weekends for easier subsetting
+plot1_weekend <- complete2 %>%
+  filter(weekend == "Weekend")
+
+    # grouping by interval for weekends and weekdays separately
+    plot1_weekend <- plot1_weekend %>%
+      group_by(interval) %>%
+      mutate(sum = sum(steps))
+
+plot1_weekday <- complete2 %>%
+  filter(weekend == "Weekday")
+    
+    plot1_weekday <- plot1_weekday %>%
+      group_by(interval) %>%
+      mutate(sum= sum(steps))
+
+# Plot the number of steps per interval for weekends and weekdays separately
+a <- ggplot(data = plot1_weekday, aes(x = interval, y = sum)) +
+  geom_line() +
+  geom_smooth() +
+  labs(x = "Intervals", y = "Step Count Per Interval") +
+  ggtitle("Weekdays")
+
+b <- ggplot(data = plot1_weekend, aes(x = interval, y = sum)) +
+  geom_line() +
+  geom_smooth() +
+  labs(x = "Intervals", y = "Step Count Per Interval") +
+  ggtitle("Weekends")
+
+# get the average steps per day
+complete2 <- complete2 %>%
+  group_by(date) %>%
+  mutate(sum = sum(steps))
+
+# get the mean step count per day vs weekday and weekend
+c <- ggplot(data = complete2, aes(x = date, y = sum))+
+  geom_point()+
+  geom_smooth(method = "loess") +
+  facet_grid(cols = vars(weekend)) + 
+  labs(x = "Date", y = "Step Count Per Day") +
+  ggtitle("Comparison of Step Count Per Day on both Weekends and Weekdays") 
+
+grid.arrange(a,b,nrow=1)
+```
+</p>
+
+A more intuitive visual comparison of activity between weekdays and weekends is to fit a loess curve to the data as it is superimposed. However:
+
+* Keep in mind that there are far more data points relating to weekdays than there to weekends.
+* Additionally, the distribution of the data in time will be far more uniform for weekdays than it will be for weekends. 
+<p>
+``` {r}
+d <- ggplot(data = complete2, aes(x = date, y = complete2$sum, col = complete2$weekend))+
+  geom_point()+
+  geom_smooth(method = "loess")+
+  labs(x = "Date", y = "Step Count Each Day") +
+  ggtitle("Comparison of Step Count Each Day on both Weekends and Weekdays")
+c
+d
+
+```
+</p>
+
